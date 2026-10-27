@@ -1,0 +1,17 @@
+{
+  "nodeModulesDir": "none",
+  "tasks": {
+    "check": "deno check src/mod.ts",
+    "test": "deno test --allow-read=tests --allow-env tests/",
+    "lint": "deno lint src tests",
+    "fmt": "deno fmt src tests"
+  },
+  "fmt": {
+    "lineWidth": 120
+  },
+  "lint": {
+    "rules": {
+      "exclude": ["no-explicit-any", "no-import-prefix", "require-await"]
+    }
+  }
+}
