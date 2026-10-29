@@ -4,7 +4,8 @@ Shared Deno module for the portfolio's Supabase edge functions. It replaces the
 helpers that were copy-pasted into almost every function (and had already
 drifted): CORS + JSON responses, the auth preamble, App Store JWS / Server
 Notifications v2 verification, account deletion, Stripe helpers, the Anthropic
-proxy, rate limiting, APNs push and Resend email.
+proxy, rate limiting, APNs push, Resend email, and (0.2) the `report-issue`
+GitHub filer behind the PortfolioFeedback in-app reporter.
 
 Seeded from Contrarian's `_shared/` (the only App Store verifier that works on
 the edge runtime, and tested) and Celiador's APNs sender. See
@@ -31,6 +32,7 @@ the edge runtime, and tested) and Celiador's APNs sender. See
 | `src/ratelimit.ts` | `rateLimiter({perMinute})` (in-memory sliding window), the `DailyCap` interface, `enforceDailyCap(cap, userId)` |
 | `src/apns.ts` | `sendAlert`, `sendLiveActivity` (env-configured), `createApnsClient(cfg)`, `isDeadToken`, `isValidDeviceToken`, `hostFor` |
 | `src/email.ts` | `sendEmail({to, subject, text, html?, idempotencyKey?})` via Resend, `emailConfigured`, `canEmailPublic` |
+| `src/github.ts` | `reportIssue(req, opts?)` (the whole `report-issue` pipeline), `parseIssueApps`/`resolveIssueApp`, `validateIssueReport`, `formatIssueTitle`/`formatIssueBody`/`issueLabels`, `createIssue`, `githubAppAuth`/`staticToken`/`githubAuthFromEnv`, `rsaPkcs8FromPem`, `supabaseAttachmentStore` |
 | `src/mod.ts` | re-exports everything |
 
 Import a submodule (`./_shared/portfolio/http.ts`) instead of `mod.ts` to keep a
@@ -200,6 +202,47 @@ const r = await sendEmail({ to: "user@example.com", subject: "Welcome", text: "H
 
 Env: `RESEND_API_KEY`, `EMAIL_FROM`. Never throws; returns `{ok, id}` or `{ok: false, status, error}`.
 
+**GitHub issues from the app (`report-issue`)**
+
+The server half of the [PortfolioFeedback](../PortfolioFeedback/README.md) Swift
+package. One deployment serves every app: the function holds the GitHub credential and
+maps the caller's `X-App-Key` to a repo, so no app binary carries a token. A copy-ready
+function is in `examples/report-issue/index.ts`:
+
+```ts
+import { handle } from "../_shared/portfolio/http.ts";
+import { reportIssue } from "../_shared/portfolio/github.ts";
+
+Deno.serve(handle((req) => reportIssue(req), { methods: ["POST"] }));
+```
+
+Pipeline: `X-App-Key` → app (401 `unknown_app`) → per-app rate limit → body ≤ ~9 MB →
+`validateIssueReport` (400 `invalid_report` + `field`) → optional bundle-ID allowlist
+(403 `bundle_mismatch`) → per-install rate limit (429 `rate_limited`, key
+`appKey:reporterId`) → attachments to storage (failures are logged and the issue says
+"not stored") → `POST /repos/{repo}/issues` → 201 `{number, url}`. GitHub failures are
+502 `github_error` (`{status}`), 503 `github_unreachable` / `github_rate_limited`; the
+upstream message is logged, never returned. Title `[Bug] …`, labels `from-app`,
+`kind:<kind>`, `channel:<channel>`, body = description, context table (app, channel, OS,
+device, locale, Low Power Mode, reporter, install id, app `extra`), log in a collapsed
+fenced block, attachment links.
+
+Env:
+
+| Var | Purpose |
+|---|---|
+| `ISSUE_APPS` | `{"otta":{"repo":"Cliefden/Otta","bundleIds":["com.crawik.otta"],"labels":["from-app"],"assignees":["scw"]}, …}`. `bundleIds`, `labels`, `assignees` optional. |
+| `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID` | **Preferred.** A GitHub App installed on the org with *Issues: read & write* on the repos. The key may be the PKCS#1 PEM GitHub downloads (`BEGIN RSA PRIVATE KEY`) or PKCS#8; `\n` escapes work. App JWT (RS256, `crypto.subtle`) → installation token, cached and refreshed 5 min before expiry. |
+| `GITHUB_TOKEN` | Alternative: a fine-grained PAT with Issues read/write on those repos. |
+| `GITHUB_API_URL` | default `https://api.github.com` |
+| `ISSUE_ATTACHMENTS_BUCKET` | optional **private** bucket; files go to `<appKey>/<yyyy-mm>/<uuid>-<name>` and the issue links a 1-year signed URL. Unset → attachments are dropped (noted in the issue). |
+| `ISSUE_RATE_PER_MINUTE`, `ISSUE_APP_RATE_PER_MINUTE` | defaults 5 per install, 30 per app |
+
+Clients send the stack's anon key as `apikey` + `Authorization: Bearer`, so the default
+`verify_jwt` on the edge runtime passes. `reportIssue(req, opts)` takes `apps`, `auth`,
+`limits`, `perInstall`/`perApp` limiters, `storeAttachment`, `fetch` for tests and for
+functions that want their own wiring.
+
 ## Canonical Stripe status mapping
 
 | Stripe | portfolio | entitled |
@@ -250,8 +293,8 @@ Migrate the SQL before you switch an app over:
 
 ```sh
 # from the app repo root
-../supabase-shared/scripts/sync-shared.sh 0.1.0 supabase/functions/_shared/portfolio
-git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-shared 0.1.0"
+../supabase-shared/scripts/sync-shared.sh 0.2.0 supabase/functions/_shared/portfolio
+git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-shared 0.2.0"
 ```
 
 - The script shallow-clones the tag from
@@ -271,7 +314,7 @@ git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-s
 
 ```sh
 deno task check   # deno check src/mod.ts
-deno task test    # deno test (57 tests)
+deno task test    # deno test (74 tests)
 deno task lint
 ```
 
