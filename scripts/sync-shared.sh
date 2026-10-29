@@ -3,7 +3,7 @@
 #
 # Usage (from the app repo):
 #   path/to/sync-shared.sh <tag> <dest>
-#   e.g. sync-shared.sh 0.1.0 supabase/functions/_shared/portfolio
+#   e.g. sync-shared.sh 0.2.0 supabase/functions/_shared/portfolio
 #
 # Shallow-clones <tag> of the repo into a temp dir, replaces <dest> with its
 # src/ tree, and writes <dest>/VERSION (tag, commit, repo, date). Commit the

@@ -200,6 +200,8 @@ import { sendEmail } from "../_shared/portfolio/email.ts";
 const r = await sendEmail({ to: "user@example.com", subject: "Welcome", text: "Hi!", idempotencyKey: `welcome-${userId}` });
 ```
 
+Env: `RESEND_API_KEY`, `EMAIL_FROM`. Never throws; returns `{ok, id}` or `{ok: false, status, error}`.
+
 **GitHub issues from the app (`report-issue`)**
 
 The server half of the [PortfolioFeedback](../PortfolioFeedback/README.md) Swift
@@ -240,8 +242,6 @@ Clients send the stack's anon key as `apikey` + `Authorization: Bearer`, so the 
 `verify_jwt` on the edge runtime passes. `reportIssue(req, opts)` takes `apps`, `auth`,
 `limits`, `perInstall`/`perApp` limiters, `storeAttachment`, `fetch` for tests and for
 functions that want their own wiring.
-
-Env: `RESEND_API_KEY`, `EMAIL_FROM`. Never throws; returns `{ok, id}` or `{ok: false, status, error}`.
 
 ## Canonical Stripe status mapping
 
@@ -293,8 +293,8 @@ Migrate the SQL before you switch an app over:
 
 ```sh
 # from the app repo root
-../supabase-shared/scripts/sync-shared.sh 0.1.0 supabase/functions/_shared/portfolio
-git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-shared 0.1.0"
+../supabase-shared/scripts/sync-shared.sh 0.2.0 supabase/functions/_shared/portfolio
+git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-shared 0.2.0"
 ```
 
 - The script shallow-clones the tag from
@@ -314,7 +314,7 @@ git add supabase/functions/_shared/portfolio && git commit -m "Vendor supabase-s
 
 ```sh
 deno task check   # deno check src/mod.ts
-deno task test    # deno test (57 tests)
+deno task test    # deno test (74 tests)
 deno task lint
 ```
 
